@@ -1,0 +1,262 @@
+#!/usr/bin/env bash
+
+#Run this script as root.
+if [[ $EUID -ne 0 ]]; then
+   echo "This script must be run as root" 
+      exit 1
+fi
+ 
+#SysDefPrep, or System Defense Preparation, is a script to initiate basic defensive measures on a linux system.   
+options=0
+while [ "$options" != 3 ]; do
+read -r -p "Welcome to System Defense Preparer. Would you like to.. 
+1) Run initial setup 
+2) Manage Configuration 
+3) Exit 
+Selection: " options
+#
+
+if [ "$options" = 1 ]; then
+# Shutdown network adapter - Prevent active intrustion/unwanted modification during configuration
+ip link set ens33 down
+echo "Internet interface shutdown."
+# Create Initial Pristine Backup (Default unconfigured computer)
+echo "Initializing pristine backup - use this to recover your system to it's initial state, if compromised."
+echo "This may take a minute. Please wait."
+cd / || exit
+tar -cpzf InitialRecovery.tar.gz --exclude=/InitialRecovery.tar.gz --one-file-system /
+	#Reference https://help.ubuntu.com/community/BackupYourSystem/TAR for detailed explanation
+echo "Backup complete."
+# Change root password
+echo "Please input a new root password."
+passwd
+# Modify Sudoers - only root allowed.
+echo "Purging evil. (sudoers file) - Let there be one true root."
+echo "#
+#
+# This file MUST be edited with the 'visudo' command as root.
+*#
+# Please consider addin the local content in /etc/sudoers.d/ instead of 
+# directly modifying this file.
+# 
+# See the man page for details on how to write a sudoers file.
+#
+Defaults	env_reset
+Defaults	mail_badpass
+Defaults	secure_path=/usr/local/sbin:/ur/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin
+
+# Host alias specification
+
+# User alias specification
+
+# Cmnd alias specification
+
+# User privilege specification
+root	ALL=(ALL:ALL) ALL
+
+# Members of the admin group may gain root privileges
+# Example: %admin	ALL=(ALL) ALL
+
+# Allow members of group sudo to execute any command
+# Example: %sudo	ALL=(ALL:ALL) ALL
+
+# See sudoers(5) for more information on #include directives:
+" > /etc/sudoers
+
+# Generate basic firewall rules - reference: https://wiki.archlinux.org/index.php/simple_stateful_firewall#Firewall_for_a_single_machine
+echo "Raising firewall defenses."
+## Flushes old rules
+iptables -F
+
+## Create chains for customization
+iptables -N TCP
+iptables -N UDP
+
+## block all incoming traffic, allow outgoing traffic, and stop forwarding traffic.
+iptables -P INPUT DROP
+iptables -P OUTPUT ACCEPT
+iptables -P FORWARD DROP
+
+## allow established connections to come back in
+iptables -A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+## allow loopback interface functionality
+iptables -A INPUT -i lo -j ACCEPT
+## Rejects invalid flags
+iptables -A INPUT -m conntrack --ctstate INVALID -j DROP
+## Allows new ICMP/ping traffic - all other ping requests handled by related/established rule.
+iptables -A INPUT -p icmp --icmp-type 8 -m conntrack --ctstate NEW -j ACCEPT
+
+## Handle incoming new connection requests, once established, goes through related/established rule.
+iptables -A INPUT -p udp -m conntrack --ctstate NEW -j UDP
+iptables -A INPUT -p tcp --syn -m conntrack --ctstate NEW -j TCP
+## Reject TCP connections w/ TCP reset and UDP streams with port unreachable messages if not opened - allows for quick and clean connection handling.
+iptables -A INPUT -p udp -j REJECT --reject-with icmp-port-unreachable
+iptables -A INPUT -p tcp -j REJECT --reject-with tcp-reset
+## immitate linux default behavior; rejects all remaining traffic with unreachable message
+iptables -A INPUT -j REJECT --reject-with icmp-proto-unreachable
+
+## save the default configuration stateful firewall
+iptables-save > /etc/iptables/iptables.corerules
+
+## Advanced security rules can be found int he archlinux setup link provided above.
+
+## Saves a modified ruleset
+echo "Saving customized firewall."
+iptables-save > /etc/iptables/iptables.modifiedrules
+
+## Establish IPtables persistence - modify this with whichever ruleset you save
+echo "Establishing persistent firewall."
+echo "iptables-restore /etc/iptables/iptables.modifiedrules" >> /etc/rc.local
+chmod +x /etc/rc.local
+
+# Create Configured Backup (This script configured.) Keep in mind this will include the original backup file.
+echo "Establishing recovery measures."
+tar -cpzf ConfiguredRecovery.tar.gz --exclude=/ConfiguredRecovery.tar.gz --one-file-system /
+
+# Turn network adapter on
+echo "Reconnecting to the cyber world."
+ip link set ens33 up
+echo "You are back online."
+
+elif [ "$options" = 2 ]; then
+
+# Script loop for user input.
+while [ "$options" = 2 ]; do
+# Ask user what to do next
+read -r -p "
+What shall we do next?
+1) View/Edit Firewall Rules
+2) Make new users
+3) Disable/Enable Network Interface
+4) Mass change passwords
+5) Restore system from backups
+6) Exit
+" selection
+case $selection in
+	1 )	
+		read -r -p "
+		Firewall Options:
+		1) Open SSH (Remote Mangement)
+		2) Open HTML (Port 80)
+		3) Open Secure HTML (Port 443)
+		4) Open DNS (Port 53)
+		5) Restore Rules
+		6) Customize Rules
+		7) Save Modified Rules
+		8) View/Delete Firewall Rule
+		9) Exit
+		" fwoption
+		case $fwoption in
+			1 )
+				## This rule allows remote management
+				iptables -A TCP -p tcp --dport 22 -j ACCEPT
+				echo "SSH enabled."
+				;;
+			2 )
+				## This rule allows for serving web pages
+				iptables -A TCP -p tcp --dport 80 -j ACCEPT
+				echo "Now serving web pages."
+				;;
+			3 )
+				## This rule allows for serving Secure web pages
+				iptables -A TCP -p tcp --dport 443 -j ACCEPT
+				echo "Now serving secure web pages."
+				;;
+			4 )
+				## Allow for the computer to serve as a DNS server
+				iptables -A TCP -p tcp --dport 53 -j ACCEPT
+				iptables -A TCP -p tcp --dport 53 -j ACCEPT
+				echo "DNS ports now open."
+				;;
+			5 ) 
+				## Restore firewall
+				read -r -p "
+				Do you want to restore the core rules, or the modified rules?
+				1) Modified
+				2) Core
+				3) Cancel
+				4) Establish Persistant firewall
+				" restore
+				case "$restore" in
+					1 )
+						echo "Restoring modified rules."
+						iptables-restore < /etc/iptables/iptables.modifiedrules
+						;;
+
+					2 )
+						echo "Restoring core rules."
+						iptables-restore < /etc/iptables/iptables.corerules
+						;;
+					3 )
+						break
+						;;
+					4 )
+						echo "Establishing persistant firewall."
+						echo "iptables-restore /etc/iptables/iptables.modifiedrules" >> rc.local
+				esac
+				;;
+			6 )
+				## Make new firewall rules (open ports)
+				read -r -p "What is the port you'd like to open? <1-65535>: " port
+				read -r -p "what is the protocol? <TCP/UDP>: " protocol
+				iptables -A -p "$protocol" --dport "$port" -j ACCEPT
+				;;
+			7 )
+				## Saves modified rules
+				echo "Saving modified rules."
+				iptables-save > /etc/iptables/iptables.modifiedrules
+				;;
+			8 )	
+				# View Firewall Rules / Delete Rules
+				echo "Displaying firewall"
+				iptables -L --line-numbers
+				deleteoption=1
+				while [ "$deleteoption" != 0 ] || [ "$chainoption" != 0 ]; do
+					read -r -p "Which chain does the rule belong to? 0 to cancel: " chainoption
+					read -r -p "Which rule would you like to remove? 0 to cancel: " deleteoption
+					iptables -D "$chainoption" "$deleteoption"
+				done	
+				;;
+			9 )
+				#exits
+				break
+				;;
+		esac
+		;;
+	2 )
+		# Make new users
+		echo "This feature is still pending completion. Please try again later."
+		;;
+
+	3 )
+		# Disable Network Adapter if off, Enable if on
+		echo "This feature is still pending completion. Please try again later."
+		;;
+		
+	4 ) 
+		# Change user passwords?
+		echo "This feature is still pending completion. Please try again later."
+		;;
+
+	5 ) 
+		# Backup Restore
+		echo "This feature is still pending completion. Please try again later."
+		;;
+
+	6 ) 
+		options=0
+		break
+		;;
+
+	* ) 
+		echo "Invalid option."
+		;;
+esac
+done
+
+elif [ "$options" = 3 ]; then
+	exit
+
+else read -r -p "Please select 1 for initial system setup, 2 for Customization options, or 3 to Exit." options
+fi
+done
