@@ -16,10 +16,13 @@ read -r -p "Welcome to System Defense Preparer. Would you like to..
 Selection: " options
 #
 
+fw4Path=/etc/iptables/ip4.rules
 if [ "$options" = 1 ]; then
+# Assuming that we have access to the ip command, lets get the interface used to reach 1.1.1.1
+interface=`ip route get 1.1.1.1 | grep -Po "(?<=dev )[^ ]+"`
 # Shutdown network adapter - Prevent active intrustion/unwanted modification during configuration
-ip link set ens33 down
-echo "Internet interface shutdown."
+ip link set $interface down
+echo "Interface $interface shutdown."
 # Create Initial Pristine Backup (Default unconfigured computer)
 echo "Initializing pristine backup - use this to recover your system to it's initial state, if compromised."
 echo "This may take a minute. Please wait."
@@ -83,8 +86,6 @@ iptables -A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 iptables -A INPUT -i lo -j ACCEPT
 ## Rejects invalid flags
 iptables -A INPUT -m conntrack --ctstate INVALID -j DROP
-## Allows new ICMP/ping traffic - all other ping requests handled by related/established rule.
-iptables -A INPUT -p icmp --icmp-type 8 -m conntrack --ctstate NEW -j ACCEPT
 
 ## Handle incoming new connection requests, once established, goes through related/established rule.
 iptables -A INPUT -p udp -m conntrack --ctstate NEW -j UDP
@@ -98,15 +99,18 @@ iptables -A INPUT -j REJECT --reject-with icmp-proto-unreachable
 ## save the default configuration stateful firewall
 iptables-save > /etc/iptables/iptables.corerules
 
-## Advanced security rules can be found int he archlinux setup link provided above.
+## Advanced security rules can be found in the archlinux setup link provided above.
 
 ## Saves a modified ruleset
-echo "Saving customized firewall."
-iptables-save > /etc/iptables/iptables.modifiedrules
+echo "Saving IPv4 firewall to $fw4Path"
+iptables-save > $fw4Path
 
 ## Establish IPtables persistence - modify this with whichever ruleset you save
+## TODO: make sure rc.local actually exists
 echo "Establishing persistent firewall."
-echo "iptables-restore /etc/iptables/iptables.modifiedrules" >> /etc/rc.local
+# defeat chattr
+chattr -i /etc/rc.local
+echo "iptables-restore $fw4Path" >> /etc/rc.local
 chmod +x /etc/rc.local
 
 # Create Configured Backup (This script configured.) Keep in mind this will include the original backup file.
@@ -115,7 +119,7 @@ tar -cpzf ConfiguredRecovery.tar.gz --exclude=/ConfiguredRecovery.tar.gz --one-f
 
 # Turn network adapter on
 echo "Reconnecting to the cyber world."
-ip link set ens33 up
+ip link set $interface up
 echo "You are back online."
 
 elif [ "$options" = 2 ]; then
@@ -164,6 +168,7 @@ case $selection in
 				;;
 			4 )
 				## Allow for the computer to serve as a DNS server
+				# FIXME: one of these needs to be for the UDP protocol
 				iptables -A TCP -p tcp --dport 53 -j ACCEPT
 				iptables -A TCP -p tcp --dport 53 -j ACCEPT
 				echo "DNS ports now open."
@@ -180,7 +185,7 @@ case $selection in
 				case "$restore" in
 					1 )
 						echo "Restoring modified rules."
-						iptables-restore < /etc/iptables/iptables.modifiedrules
+						iptables-restore < $fw4Path
 						;;
 
 					2 )
