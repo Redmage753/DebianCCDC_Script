@@ -1,0 +1,176 @@
+#!/usr/bin/env bash
+
+#script to make iptable firewall rules easier
+
+#This script takes the first command line variable and processes it for a proper case value. 
+#It then processes the second variable for the proper user input and validates input
+#Once finished, it shifts the input. Any "garbage/incorrect" will automatically shift, allowed all values to be either processed or discarded.
+while [ "$1" != "" ]; do
+	case $1 in
+		-C | --chain )
+		       #After the -C flag, checks for OUTPUT/INPUT/FORWARD, if not one of those three, then prompts the user for input to get the correct parameter.	
+			if [ "$2" = "OUTPUT" ] || [ "$2" = "INPUT" ] ||  [ "$2" = "FORWARD" ]; then
+				CHAIN="$2"
+			else
+				CHAIN="$2"
+				echo "$CHAIN is not a valid chain."
+				while [ "$CHAIN" != "OUTPUT" ] && [ "$CHAIN" != "INPUT" ] && [ "$CHAIN" != "FORWARD" ]; do
+					read -r -p "Please enter a proper input for chain. (OUTPUT/INPUT/FORWARD): " CHAIN
+				done
+			fi
+			shift
+			;;
+		-SIP | --sourceip ) 
+			#After the -SIP flag, checks for a valid IP address through regex, if invalid, then prompts the user for input to get the correct parameter.	
+			if [ "$(echo ${2} | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" )" ]; then
+				SIP=$2; 
+			else 
+				SIP=$2;
+				valid=false
+				while [ "$valid" = "false" ]; do
+					read -r -p "Please enter a valid IP: " SIP
+					if [ "$(echo ${SIP} | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" )" ]; then
+							valid=true
+						else
+							echo "$SIP is not a valid IP address."
+						fi	
+				done
+
+		       	fi
+			shift
+			;;
+		-DIP | --destinationip )
+			#After the -DIP flag, checks for a valid IP address through regex, if invalid, then prompts the user for input to get the correct parameter.	
+			if [ "$(echo ${2} | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" )" ]; then 
+				DIP=$2; 
+			else
+			        DIP=$2;	
+				valid=false
+				while [ "$valid" = "false" ]; do
+					read -r -p "Please enter a valid IP: " DIP
+				       		if [ "$(echo ${DIP} | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" )" ]; then
+							valid=true
+						else
+							echo "$DIP is not a valid IP address."
+						fi	
+				done
+
+		       	fi
+			shift
+			;;
+		-SP | --sport )
+			#After the -SP flag, validates if the port is within proper range, if not, then prompts the user for input to get the correct parameter.	
+			if (( "$2" >= 1 )) && (( "$2" <= 65535 )); then
+				SPORT="$2"
+			else
+				valid=false
+				while [ "$valid" = "false" ]; do
+					read -r -p "Please enter a valid port number: " SPORT
+					if (( "$SPORT" >= 1 )) && (( "$SPORT" <= 65535 )); then
+						valid=true
+					else
+						echo "$SPORT is not a valid port number."
+					fi
+				done
+
+			fi
+			shift
+			;;
+		-DP | --dport ) 
+			#After the -DP flag, validates if the port is within proper range, if not, then prompts the user for input to get the correct parameter.	
+			if (( "$2" >= 1 )) && (( "$2" <= 65535 )); then
+				DPORT="$2"
+			else
+				valid=false
+				while [ "$valid" = "false" ]; do
+					read -r -p "Please enter a valid port number: " DPORT
+					if (( "$DPORT" >= 1 )) && (( "$DPORT" <= 65535 )); then
+						valid=true
+					else
+						echo "$DPORT is not a valid port number."
+					fi
+				done
+
+			fi
+			shift
+
+			;;
+
+		-T | --target )
+			#After the -T flag, checks for ACCEPT/DROP/REJECT, if not one of those three, then prompts the user for input to get the correct parameter.	
+			if [ "$2" = "ACCEPT" ] || [ "$2" = "DROP" ] ||  [ "$2" = "REJECT" ]; then
+				TARGET="$2"
+			else
+				TARGET="$2"
+				echo "$TARGET is not a valid target."
+				while [ "$TARGET" != "ACCEPT" ] && [ "$TARGET" != "DROP" ] && [ "$TARGET" != "REJECT" ]; do
+					read -r -p "Please enter a proper input for the target (ACCEPT/DROP/REJECT): " TARGET
+				done
+			fi
+			shift
+
+			;;
+		-P | --protocol )
+			#After the -P flag, checks for TCP/UDP, if not one of those two, then prompts the user for input to get the correct parameter.	
+			if [ "$2" = "UDP" ] || [ "$2" = "TCP" ]; then
+				PROTOCOL="$2"
+			else
+				while true; do
+					read -r -p "Please enter a valid protocol (UDP or TCP): " PROTOCOL
+					if [ "$PROTOCOL" = "UDP" ] || [ "$PROTOCOL" = "TCP" ]; then
+						break
+					else
+						"$PROTOCOL is not a valid protocol."
+					fi
+				done
+			fi
+			shift
+			;;
+
+#Future Feature
+#		-w | --walkthrough ) walkthrough=1
+#			;;
+
+
+#help display
+		-h | --help | "" )
+			echo "To use this script, enter the following parameter commands: "
+			echo "For chain: -C <OUTPUT/INPUT/FORWARD> or --chain <OUTPUT/INPUT/FORWARD>"
+			echo "For source IP: -SIP <ip address> or --sourceip <ip address>"
+			echo "For destination IP: -DIP <ip address> or --destinationip <ip address>"
+			echo "For source port: -SP <1-65535> or --sport <1-65535>"
+			echo "For destination port: -DP <1-65535> or --dport <1-65535>"
+			echo "For target: -T <ACCEPT/DROP/REJECT> or --target <ACCEPT/DROP/REJECT>"
+			echo "For protocol: -P <UDP/TCP> or --protocol <UDP/TCP"
+			exit
+			;;
+
+		* ) shift
+			;;			
+	esac
+	shift
+done
+
+#More advanced script later could make this into INSERT/APPEND/DELETE
+ACTION=APPEND
+
+#Confirmation of the output
+echo "We will $ACTION rule $TARGET $CHAIN traffic from $SIP:$SPORT to $DIP:$DPORT on protocol $PROTOCOL"
+echo "The command will look like this: "
+echo "iptables -A $CHAIN -p $PROTOCOL -s $SIP --sport $SPORT -d $DIP --dport $DPORT -j $TARGET"
+read -r -p "Is this correct? Yes/No: " selection 
+
+if [ $selection = "yes" ] || [ $selection = "y" ] || [ $selection = "Y" ] || [ $selection = "Yes" ] || [ $selection = "YES" ]; then
+       iptables -A $CHAIN -p $PROTOCOL -s $SIP --sport $SPORT -d $DIP --dport $DPORT -j $TARGET
+else
+	"Please try again."
+	bash betterfwss.sh -h
+fi
+#
+#
+#if [ "$walkthrough" = "1" ]; then
+#	echo -n "Enter the chain. (OUTPUT/INPUT/FORWARD): "
+#	read response
+#	if [ -n "$response" ]; then
+#		CHAIN=$response
+#	fi
